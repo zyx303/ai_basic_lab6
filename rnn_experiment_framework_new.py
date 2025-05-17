@@ -9,9 +9,6 @@ for a full list of options.
 """
 
 
-import warnings 
-warnings.filterwarnings("ignore")
-
 
 import argparse
 import os
@@ -47,7 +44,7 @@ def parse_args():
     p.add_argument("--device", choices=["cpu", "cuda"], default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data", default="shakespeare.txt")
-    p.add_argument("--model", default="char_lstm.pth")
+    p.add_argument("--model", default="char_lstm.pth", help="Model filename (saved in results/)")
     return p.parse_args()
 
 
@@ -63,6 +60,12 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
+os.makedirs(RESULTS_DIR, exist_ok=True)
+DATA_PATH = os.path.join(RESULTS_DIR, "shakespeare.txt")
+MODEL_PATH = os.path.join(RESULTS_DIR, "char_lstm.pth")  # 默认模型名
+LOSS_CURVE_PATH = None  # 将在训练后动态生成
 
 def download_shakespeare(path: str):
     if os.path.exists(path):
@@ -73,7 +76,7 @@ def download_shakespeare(path: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(r.text)
     print("[✓] downloaded Shakespeare corpus →", path)
-
+#
 
 # -----------------------------------------------------------------------------
 # 3. Dataset
@@ -201,22 +204,28 @@ def main():
 
     losses = train(model, loader, crit, optim, args.device, args.epochs, args.clip, args.print_every)
 
-    torch.save(model.state_dict(), args.model)
-    print("[✓] weights saved →", args.model)
+    torch.save(model.state_dict(), MODEL_PATH)
+    print("[✓] weights saved →", MODEL_PATH)
 
+    LOSS_CURVE_PATH = os.path.join(RESULTS_DIR, f"loss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
     plt.figure()
     plt.plot(losses)
     plt.title("training loss")
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.tight_layout()
-    fig = f"loss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    plt.savefig(fig)
-    print("[✓] curve saved →", fig)
+    plt.savefig(LOSS_CURVE_PATH)
+    print("[✓] curve saved →", LOSS_CURVE_PATH)
+    
 
     for t in (0.5, 1.0, 1.3):
         print(f"\n--- temperature {t} ---")
         print(generate(model, "ROMEO: ", c2i, i2c, vocab, temp=t, device=args.device))
+
+        sample_path = os.path.join(RESULTS_DIR, f"sample_temp_{t}.txt")
+        with open(sample_path, "w", encoding="utf-8") as f:
+            f.write(generate(model, "ROMEO: ", c2i, i2c, vocab, temp=t, device=args.device))
+        print(f"[✓] sample saved → {sample_path}")
 
 
 if __name__ == "__main__":
